@@ -1,0 +1,418 @@
+TESTE TECNICO:
+
+PACKAGE.JSON:
+{
+  "name": "teste-pratico",
+  "version": "1.0.0",
+  "description": "Teste pratico ",
+  "main": "app.js",
+  "scripts": {
+    "start": "nodemon ./app.js"
+  },
+  "keywords": [
+    "mysql",
+    "bootstrap",
+    "express",
+    "node"
+  ],
+  "author": "Anthony Heder Rodrigues Calixto",
+  "license": "ISC",
+  "dependencies": {
+    "bootstrap": "^5.3.3",
+    "express": "^4.21.2",
+    "express-fileupload": "^1.5.1",
+    "express-handlebars": "^8.0.1",
+    "mysql2": "^3.14.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
+}
+
+BANCO DE DADOS:
+create database TesteTencico;
+ 
+ use TesteTecnico;
+ 
+ create table Associados(
+ id_associado int auto_increment primary key,
+ Nome varchar(255) not null,
+ Cpf varchar(255) not null,
+ Data_nasicmento datetime
+ );
+ 
+  create table Empresas(
+ id_empresa int auto_increment primary key,
+ Nome varchar(255) not null,
+ CNPJ varchar(255) not null
+ );
+ 
+   CREATE TABLE AssociadosEmpresas (
+    empresaid INT NOT NULL,
+    associadoid INT NOT NULL,
+    FOREIGN KEY (empresaid) REFERENCES Empresas(id_empresa),
+    FOREIGN KEY (associadoid) REFERENCES Associados(id_associado)
+);
+
+
+APP.JS:
+// Importar módulos necessários
+const express = require('express');
+const mysql = require('mysql2');
+const fileupload = require('express-fileupload');
+
+const app = express();
+
+// Habilitar upload de arquivos
+app.use(fileupload());
+
+// Adicionar Bootstrap e CSS
+app.use('/bootstrap', express.static('./node_modules/bootstrap/dist'));
+app.use('/css', express.static('./css'));
+
+// Importar módulo express-handlebars
+const { engine } = require('express-handlebars');
+
+// Configurar o handlebars
+app.engine('handlebars', engine());
+app.set('view engine', 'handlebars');
+app.set('views', './views');
+
+// Manipulação dos dados via rotas
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+
+// Configurar conexão com o banco de dados
+const conexao = mysql.createConnection({
+    host: 'localhost',
+    user: 'root',
+    password: '',
+    database: 'TesteTecnico'
+});
+
+// Testar conexão
+conexao.connect(function(erro) {
+    if (erro) throw erro;
+    console.log('Conexão com o banco de dados estabelecida.');
+});
+
+// Rota principal para redirecionar para a página de associados
+app.get('/', function(req, res) {
+    res.redirect('/associados');
+});
+
+// Rota para listar associados com filtros
+app.get('/associados', function(req, res) {
+    const { Nome, Cpf, Data_nascimento } = req.query;
+
+    let sql = 'SELECT * FROM associados WHERE 1=1';
+    let params = [];
+
+    if (Nome) {
+        sql += ' AND Nome LIKE ?';
+        params.push('%' + Nome + '%');
+    }
+    if (Cpf) {
+        sql += ' AND Cpf = ?';
+        params.push(Cpf);
+    }
+    if (Data_nascimento) {
+        sql += ' AND Data_nascimento = ?';
+        params.push(Data_nascimento);
+    }
+
+    conexao.query(sql, params, function(erro, retorno) {
+        if (erro) {
+            console.error('Erro ao buscar usuários:', erro);
+            res.status(500).send('Erro ao carregar a lista de usuários.');
+            return;
+        }
+        res.render('associados', { associados: retorno });
+    });
+});
+
+// Cadastro de associado com vínculo a empresas
+app.post('/associados', function(req, res) {
+    let { Nome, Cpf, Data_nascimento } = req.body;
+
+    let sql = `INSERT INTO associados (Nome, Cpf, Data_nascimento) VALUES (?, ?, ?)`;
+    conexao.query(sql, [Nome, Cpf, Data_nascimento], function(erro) {
+        if (erro) {
+            console.error('Erro ao cadastrar associado:', erro);
+            res.status(500).send('Erro ao cadastrar o associado.');
+            return;
+        }
+
+        res.redirect('/associados');
+    });
+});
+
+// Rota para editar associado
+app.post('/editarassociados/:id_associado', function(req, res) {
+    const id_associado = req.params.id_associado;
+    const { Nome, Cpf, Data_nascimento } = req.body;
+
+    let sql = 'UPDATE associados SET Nome = ?, Cpf = ?, Data_nascimento = ? WHERE id_associado = ?';
+    conexao.query(sql, [Nome, Cpf, Data_nascimento, id_associado], function(erro) {
+        if (erro) {
+            console.error('Erro ao editar associado:', erro);
+            res.status(500).send('Erro ao atualizar os dados do associado.');
+            return;
+        }
+        res.redirect('/editarassociados');
+    });
+});
+
+// Rota para remover associado
+app.get('/removerassociado/:id_associado', function(req, res) {
+    const id_associado = req.params.id_associado;
+
+    let sqlRemoverRelacionamento = 'DELETE FROM associadosempresas WHERE associadoid = ?';
+    conexao.query(sqlRemoverRelacionamento, [id_associado], function(erro) {
+        if (erro) {
+            console.error('Erro ao remover relacionamentos do associado:', erro);
+        }
+    });
+
+    let sqlRemoverAssociado = 'DELETE FROM associados WHERE id_associado = ?';
+    conexao.query(sqlRemoverAssociado, [id_associado], function(erro) {
+        if (erro) {
+            console.error('Erro ao remover associado:', erro);
+            res.status(500).send('Erro ao remover o associado.');
+            return;
+        }
+        res.redirect('/associados');
+    });
+});
+
+// Rota para listar empresas com filtros
+app.get('/empresas', function(req, res) {
+    const { Nome, CNPJ } = req.query;
+
+    let sql = 'SELECT * FROM empresas WHERE 1=1';
+    let params = [];
+
+    if (Nome) {
+        sql += ' AND Nome LIKE ?';
+        params.push('%' + Nome + '%');
+    }
+    if (CNPJ) {
+        sql += ' AND CNPJ = ?';
+        params.push(CNPJ);
+    }
+
+    conexao.query(sql, params, function(erro, retorno) {
+        if (erro) {
+            console.error('Erro ao buscar empresas:', erro);
+            res.status(500).send('Erro ao carregar a lista de empresas.');
+            return;
+        }
+        res.render('empresas', { empresas: retorno });
+    });
+});
+
+// Cadastro de empresa
+app.post('/empresas', function(req, res) {
+    let { Nome, CNPJ } = req.body;
+
+    let sql = `INSERT INTO empresas (Nome, CNPJ) VALUES (?, ?)`;
+    conexao.query(sql, [Nome, CNPJ], function(erro) {
+        if (erro) {
+            console.error('Erro ao cadastrar empresa:', erro);
+            res.status(500).send('Erro ao cadastrar a empresa.');
+            return;
+        }
+        res.redirect('/empresas');
+    });
+});
+
+// Rota para editar empresa
+app.post('/editar_empresa/:id_empresa', function(req, res) {
+    const id_empresa = req.params.id_empresa;
+    const { Nome, CNPJ } = req.body;
+
+    let sql = 'UPDATE empresas SET Nome = ?, CNPJ = ? WHERE id_empresa = ?';
+    conexao.query(sql, [Nome, CNPJ, id_empresa], function(erro) {
+        if (erro) {
+            console.error('Erro ao editar empresa:', erro);
+            res.status(500).send('Erro ao atualizar os dados da empresa.');
+            return;
+        }
+
+        res.redirect('/editarempresas');
+    });
+});
+
+// Rota para remover empresa
+app.get('/remover_empresa/:id_empresa', function(req, res) {
+    const id_empresa = req.params.id_empresa;
+
+    let sqlRemoverRelacionamentos = 'DELETE FROM associadosempresas WHERE empresaid = ?';
+    conexao.query(sqlRemoverRelacionamentos, [id_empresa], function(erro) {
+        if (erro) {
+            console.error('Erro ao remover relacionamentos da empresa:', erro);
+        }
+    });
+
+    let sqlRemoverEmpresa = 'DELETE FROM empresas WHERE id_empresa = ?';
+    conexao.query(sqlRemoverEmpresa, [id_empresa], function(erro) {
+        if (erro) {
+            console.error('Erro ao remover empresa:', erro);
+            res.status(500).send('Erro ao remover a empresa.');
+            return;
+        }
+
+        res.redirect('/empresas');
+    });
+});
+
+// Criar servidor
+app.listen(8080, () => {
+    console.log('Servidor rodando em http://localhost:8080');
+});
+
+VIEWS: MAIN
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Cadastro</title>
+    <link rel="stylesheet" href="/bootstrap/css/bootstrap.min.css">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+        <div class="container">
+            <a class="navbar-brand" href="/">Sistema de Cadastro</a>
+            <div class="collapse navbar-collapse">
+                <ul class="navbar-nav">
+                    <li class="nav-item"><a class="nav-link" href="/associados">Associados</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/empresas">Empresas</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        {{{body}}}
+    </div>
+</body>
+</html>
+
+
+
+ASSOCIADOS
+<h2>Cadastro de Associados</h2>
+<form action="/associados" method="POST">
+    <div class="mb-3">
+        <label>Nome:</label>
+        <input type="text" name="Nome" class="form-control" required>
+    </div>
+    <div class="mb-3">
+        <label>CPF:</label>
+        <input type="text" name="Cpf" class="form-control" required>
+    </div>
+    <div class="mb-3">
+        <label>Data de Nascimento:</label>
+        <input type="date" name="Data_nacimento" class="form-control" required>
+    </div>
+    <button type="submit" class="btn btn-primary">Cadastrar</button>
+</form>
+
+<h3>Lista de Associados</h3>
+<table class="table">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Nome</th>
+            <th>CPF</th>
+            <th>Data de Nascimento</th>
+            <th>Ações</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{#each associados}}
+        <tr>
+            <td>{{this.id_associado}}</td>
+            <td>{{this.Nome}}</td>
+            <td>{{this.Cpf}}</td>
+            <td>{{this.Data_nacimento}}</td>
+            <td>
+                <button class="btn btn-warning" onclick="window.location.href='editarassociados.handlebars'" type="button">Editar</button>
+                <a href="/removerassociado/{{this.id_associado}}" class="btn btn-danger">Remover</a>
+            </td>
+        </tr>
+        {{/each}}
+    </tbody>
+</table>
+
+EDITAR ASSOCIADOS:
+<h2>Editar Associado</h2>
+<form action="/editarassociados/{{associado.id_associado}}" method="POST">
+    <div class="mb-3">
+        <label>Nome:</label>
+        <input type="text" name="Nome" value="{{associado.Nome}}" class="form-control" required>
+    </div>
+    <div class="mb-3">
+        <label>CPF:</label>
+        <input type="text" name="Cpf" value="{{associado.Cpf}}" class="form-control" required>
+    </div>
+    <div class="mb-3">
+        <label>Data de Nascimento:</label>
+        <input type="date" name="Data_nascimento" value="{{associado.Data_nascimento}}" class="form-control" required>
+    </div>
+    <button type="submit" class="btn btn-primary">Salvar Alterações</button>
+</form>
+
+EMPRESAS:
+<h2>Cadastro de Empresas</h2>
+<form action="/empresas" method="POST">
+    <div class="mb-3">
+        <label>Nome:</label>
+        <input type="text" name="Nome" class="form-control" required>
+    </div>
+    <div class="mb-3">
+        <label>CNPJ:</label>
+        <input type="text" name="CNPJ" class="form-control" required>
+    </div>
+    <button type="submit" class="btn btn-primary">Cadastrar</button>
+</form>
+
+<h3>Lista de Empresas</h3>
+<table class="table">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Nome</th>
+            <th>CNPJ</th>
+            <th>Ações</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{#each empresas}}
+        <tr>
+            <td>{{this.id_empresa}}</td>
+            <td>{{this.Nome}}</td>
+            <td>{{this.CNPJ}}</td>
+            <td>
+                <a href="/editarempresas/{{this.id_empresa}}" class="btn btn-warning">Editar</a>
+                <a href="/removerempresa/{{this.id_empresa}}" class="btn btn-danger">Remover</a>
+            </td>
+        </tr>
+        {{/each}}
+    </tbody>
+</table>
+
+EDITAR EMPRESAS:
+<h2>Editar Empresa</h2>
+<form action="/editarempresas/{{empresas.id_empresa}}" method="POST">
+    <div class="mb-3">
+        <label>Nome:</label>
+        <input type="text" name="Nome" value="{{empresas.Nome}}" class="form-control" required>
+    </div>
+    <div class="mb-3">
+        <label>CNPJ:</label>
+        <input type="text" name="CNPJ" value="{{empresas.CNPJ}}" class="form-control" required>
+    </div>
+    <button type="submit" class="btn btn-primary">Salvar Alterações</button>
+</form>
