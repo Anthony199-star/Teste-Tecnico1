@@ -1,5 +1,4 @@
 TESTE TECNICO:
-
 PACKAGE.JSON:
 {
   "name": "teste-pratico",
@@ -30,28 +29,29 @@ PACKAGE.JSON:
 }
 
 BANCO DE DADOS:
-create database TesteTencico;
- 
- use TesteTecnico;
- 
- create table Associados(
- id_associado int auto_increment primary key,
- Nome varchar(255) not null,
- Cpf varchar(255) not null,
- Data_nasicmento datetime
- );
- 
-  create table Empresas(
- id_empresa int auto_increment primary key,
- Nome varchar(255) not null,
- CNPJ varchar(255) not null
- );
- 
-   CREATE TABLE AssociadosEmpresas (
+CREATE DATABASE TesteTecnico;
+
+USE TesteTecnico;
+
+CREATE TABLE Associados (
+    id_associado INT AUTO_INCREMENT PRIMARY KEY,
+    Nome VARCHAR(200) NOT NULL,
+    Cpf VARCHAR(11) NOT NULL UNIQUE,
+    Data_nascimento DATETIME
+);
+
+CREATE TABLE Empresas (
+    id_empresa INT AUTO_INCREMENT PRIMARY KEY,
+    Nome VARCHAR(200) NOT NULL,
+    CNPJ VARCHAR(14) NOT NULL UNIQUE
+);
+
+CREATE TABLE AssociadosEmpresas (
     empresaid INT NOT NULL,
     associadoid INT NOT NULL,
     FOREIGN KEY (empresaid) REFERENCES Empresas(id_empresa),
-    FOREIGN KEY (associadoid) REFERENCES Associados(id_associado)
+    FOREIGN KEY (associadoid) REFERENCES Associados(id_associado),
+    PRIMARY KEY (empresaid, associadoid)
 );
 
 
@@ -60,25 +60,16 @@ APP.JS:
 const express = require('express');
 const mysql = require('mysql2');
 const fileupload = require('express-fileupload');
-
-const app = express();
-
-// Habilitar upload de arquivos
-app.use(fileupload());
-
-// Adicionar Bootstrap e CSS
-app.use('/bootstrap', express.static('./node_modules/bootstrap/dist'));
-app.use('/css', express.static('./css'));
-
-// Importar módulo express-handlebars
 const { engine } = require('express-handlebars');
 
-// Configurar o handlebars
+// Configurar aplicação
+const app = express();
+app.use(fileupload());
+app.use('/bootstrap', express.static('./node_modules/bootstrap/dist'));
+app.use('/css', express.static('./css'));
 app.engine('handlebars', engine());
 app.set('view engine', 'handlebars');
 app.set('views', './views');
-
-// Manipulação dos dados via rotas
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
@@ -96,173 +87,139 @@ conexao.connect(function(erro) {
     console.log('Conexão com o banco de dados estabelecida.');
 });
 
-// Rota principal para redirecionar para a página de associados
+// Rota principal
 app.get('/', function(req, res) {
     res.redirect('/associados');
 });
 
-// Rota para listar associados com filtros
+// Consulta com filtros - Associados
 app.get('/associados', function(req, res) {
     const { Nome, Cpf, Data_nascimento } = req.query;
-
     let sql = 'SELECT * FROM associados WHERE 1=1';
     let params = [];
-
-    if (Nome) {
-        sql += ' AND Nome LIKE ?';
-        params.push('%' + Nome + '%');
-    }
-    if (Cpf) {
-        sql += ' AND Cpf = ?';
-        params.push(Cpf);
-    }
-    if (Data_nascimento) {
-        sql += ' AND Data_nascimento = ?';
-        params.push(Data_nascimento);
-    }
-
+    if (Nome) sql += ' AND Nome LIKE ?', params.push('%' + Nome + '%');
+    if (Cpf) sql += ' AND Cpf = ?', params.push(Cpf);
+    if (Data_nascimento) sql += ' AND Data_nascimento = ?', params.push(Data_nascimento);
     conexao.query(sql, params, function(erro, retorno) {
-        if (erro) {
-            console.error('Erro ao buscar usuários:', erro);
-            res.status(500).send('Erro ao carregar a lista de usuários.');
-            return;
-        }
-        res.render('associados', { associados: retorno });
+        if (erro) res.status(500).send('Erro ao carregar a lista de associados.');
+        else res.render('associados', { associados: retorno });
     });
 });
 
-// Cadastro de associado com vínculo a empresas
+// Consulta por ID - Associado
+app.get('/associados/:id_associado', function(req, res) {
+    const id_associado = req.params.id_associado;
+    let sql = 'SELECT * FROM associados WHERE id_associado = ?';
+    conexao.query(sql, [id_associado], function(erro, retorno) {
+        if (erro) res.status(500).send('Erro ao carregar os dados do associado.');
+        else res.send(retorno[0]);
+    });
+});
+
+// Cadastro de Associado
 app.post('/associados', function(req, res) {
     let { Nome, Cpf, Data_nascimento } = req.body;
-
-    let sql = `INSERT INTO associados (Nome, Cpf, Data_nascimento) VALUES (?, ?, ?)`;
+    let sql = 'INSERT INTO associados (Nome, Cpf, Data_nascimento) VALUES (?, ?, ?)';
     conexao.query(sql, [Nome, Cpf, Data_nascimento], function(erro) {
-        if (erro) {
-            console.error('Erro ao cadastrar associado:', erro);
-            res.status(500).send('Erro ao cadastrar o associado.');
-            return;
-        }
-
-        res.redirect('/associados');
+        if (erro) res.status(500).send('Erro ao cadastrar o associado.');
+        else res.redirect('/associados');
     });
 });
 
-// Rota para editar associado
+// Alteração de Associado com vínculos
 app.post('/editarassociados/:id_associado', function(req, res) {
     const id_associado = req.params.id_associado;
-    const { Nome, Cpf, Data_nascimento } = req.body;
-
+    const { Nome, Cpf, Data_nascimento, EmpresasVinculadas } = req.body;
     let sql = 'UPDATE associados SET Nome = ?, Cpf = ?, Data_nascimento = ? WHERE id_associado = ?';
     conexao.query(sql, [Nome, Cpf, Data_nascimento, id_associado], function(erro) {
-        if (erro) {
-            console.error('Erro ao editar associado:', erro);
-            res.status(500).send('Erro ao atualizar os dados do associado.');
-            return;
+        if (erro) res.status(500).send('Erro ao atualizar o associado.');
+        else {
+            let sqlDelete = 'DELETE FROM associadosempresas WHERE associadoid = ?';
+            conexao.query(sqlDelete, [id_associado], function() {
+                let sqlInsert = 'INSERT INTO associadosempresas (empresaid, associadoid) VALUES (?, ?)';
+                EmpresasVinculadas.forEach(empresaid => {
+                    conexao.query(sqlInsert, [empresaid, id_associado]);
+                });
+            });
+            res.redirect('/associados');
         }
-        res.redirect('/editarassociados');
     });
 });
 
-// Rota para remover associado
+// Exclusão de Associado
 app.get('/removerassociado/:id_associado', function(req, res) {
     const id_associado = req.params.id_associado;
-
-    let sqlRemoverRelacionamento = 'DELETE FROM associadosempresas WHERE associadoid = ?';
-    conexao.query(sqlRemoverRelacionamento, [id_associado], function(erro) {
-        if (erro) {
-            console.error('Erro ao remover relacionamentos do associado:', erro);
-        }
-    });
-
-    let sqlRemoverAssociado = 'DELETE FROM associados WHERE id_associado = ?';
-    conexao.query(sqlRemoverAssociado, [id_associado], function(erro) {
-        if (erro) {
-            console.error('Erro ao remover associado:', erro);
-            res.status(500).send('Erro ao remover o associado.');
-            return;
-        }
-        res.redirect('/associados');
+    let sqlDeleteRel = 'DELETE FROM associadosempresas WHERE associadoid = ?';
+    conexao.query(sqlDeleteRel, [id_associado], function() {});
+    let sqlDelete = 'DELETE FROM associados WHERE id_associado = ?';
+    conexao.query(sqlDelete, [id_associado], function(erro) {
+        if (erro) res.status(500).send('Erro ao remover o associado.');
+        else res.redirect('/associados');
     });
 });
 
-// Rota para listar empresas com filtros
+// Consulta com filtros - Empresas
 app.get('/empresas', function(req, res) {
     const { Nome, CNPJ } = req.query;
-
     let sql = 'SELECT * FROM empresas WHERE 1=1';
     let params = [];
-
-    if (Nome) {
-        sql += ' AND Nome LIKE ?';
-        params.push('%' + Nome + '%');
-    }
-    if (CNPJ) {
-        sql += ' AND CNPJ = ?';
-        params.push(CNPJ);
-    }
-
+    if (Nome) sql += ' AND Nome LIKE ?', params.push('%' + Nome + '%');
+    if (CNPJ) sql += ' AND CNPJ = ?', params.push(CNPJ);
     conexao.query(sql, params, function(erro, retorno) {
-        if (erro) {
-            console.error('Erro ao buscar empresas:', erro);
-            res.status(500).send('Erro ao carregar a lista de empresas.');
-            return;
-        }
-        res.render('empresas', { empresas: retorno });
+        if (erro) res.status(500).send('Erro ao carregar a lista de empresas.');
+        else res.render('empresas', { empresas: retorno });
     });
 });
 
-// Cadastro de empresa
+// Consulta por ID - Empresa
+app.get('/empresas/:id_empresa', function(req, res) {
+    const id_empresa = req.params.id_empresa;
+    let sql = 'SELECT * FROM empresas WHERE id_empresa = ?';
+    conexao.query(sql, [id_empresa], function(erro, retorno) {
+        if (erro) res.status(500).send('Erro ao carregar os dados da empresa.');
+        else res.send(retorno[0]);
+    });
+});
+
+// Cadastro de Empresa
 app.post('/empresas', function(req, res) {
     let { Nome, CNPJ } = req.body;
-
-    let sql = `INSERT INTO empresas (Nome, CNPJ) VALUES (?, ?)`;
+    let sql = 'INSERT INTO empresas (Nome, CNPJ) VALUES (?, ?)';
     conexao.query(sql, [Nome, CNPJ], function(erro) {
-        if (erro) {
-            console.error('Erro ao cadastrar empresa:', erro);
-            res.status(500).send('Erro ao cadastrar a empresa.');
-            return;
-        }
-        res.redirect('/empresas');
+        if (erro) res.status(500).send('Erro ao cadastrar a empresa.');
+        else res.redirect('/empresas');
     });
 });
 
-// Rota para editar empresa
+// Alteração de Empresa com vínculos
 app.post('/editar_empresa/:id_empresa', function(req, res) {
     const id_empresa = req.params.id_empresa;
-    const { Nome, CNPJ } = req.body;
-
+    const { Nome, CNPJ, AssociadosVinculados } = req.body;
     let sql = 'UPDATE empresas SET Nome = ?, CNPJ = ? WHERE id_empresa = ?';
     conexao.query(sql, [Nome, CNPJ, id_empresa], function(erro) {
-        if (erro) {
-            console.error('Erro ao editar empresa:', erro);
-            res.status(500).send('Erro ao atualizar os dados da empresa.');
-            return;
+        if (erro) res.status(500).send('Erro ao atualizar a empresa.');
+        else {
+            let sqlDelete = 'DELETE FROM associadosempresas WHERE empresaid = ?';
+            conexao.query(sqlDelete, [id_empresa], function() {
+                let sqlInsert = 'INSERT INTO associadosempresas (empresaid, associadoid) VALUES (?, ?)';
+                AssociadosVinculados.forEach(associadoid => {
+                    conexao.query(sqlInsert, [id_empresa, associadoid]);
+                });
+            });
+            res.redirect('/empresas');
         }
-
-        res.redirect('/editarempresas');
     });
 });
 
-// Rota para remover empresa
+// Exclusão de Empresa
 app.get('/remover_empresa/:id_empresa', function(req, res) {
     const id_empresa = req.params.id_empresa;
-
-    let sqlRemoverRelacionamentos = 'DELETE FROM associadosempresas WHERE empresaid = ?';
-    conexao.query(sqlRemoverRelacionamentos, [id_empresa], function(erro) {
-        if (erro) {
-            console.error('Erro ao remover relacionamentos da empresa:', erro);
-        }
-    });
-
-    let sqlRemoverEmpresa = 'DELETE FROM empresas WHERE id_empresa = ?';
-    conexao.query(sqlRemoverEmpresa, [id_empresa], function(erro) {
-        if (erro) {
-            console.error('Erro ao remover empresa:', erro);
-            res.status(500).send('Erro ao remover a empresa.');
-            return;
-        }
-
-        res.redirect('/empresas');
+    let sqlDeleteRel = 'DELETE FROM associadosempresas WHERE empresaid = ?';
+    conexao.query(sqlDeleteRel, [id_empresa], function() {});
+    let sqlDelete = 'DELETE FROM empresas WHERE id_empresa = ?';
+    conexao.query(sqlDelete, [id_empresa], function(erro) {
+        if (erro) res.status(500).send('Erro ao remover a empresa.');
+        else res.redirect('/empresas');
     });
 });
 
@@ -416,3 +373,4 @@ EDITAR EMPRESAS:
     </div>
     <button type="submit" class="btn btn-primary">Salvar Alterações</button>
 </form>
+
