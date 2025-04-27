@@ -1,9 +1,9 @@
 TESTE TECNICO:
 PACKAGE.JSON:
 {
-  "name": "teste-pratico",
+  "name": "teste-Tecnico",
   "version": "1.0.0",
-  "description": "Teste pratico ",
+  "description": "Teste tecnico ",
   "main": "app.js",
   "scripts": {
     "start": "nodemon ./app.js"
